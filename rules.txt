@@ -1,0 +1,3 @@
+Students must attend 75% of lectures.
+Late submission penalty is 10% per day.
+Maximum absence allowed is 25%.
