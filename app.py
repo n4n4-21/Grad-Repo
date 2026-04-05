@@ -1,37 +1,85 @@
 import streamlit as st
 from model.LLM_groq import GroqModel
+from model.tts import text_to_speech
+from model.stt import speech_to_text
+from dotenv import load_dotenv
+import tempfile
+import os
+
+load_dotenv()
 
 # --- UI CONFIGURATION ---
 st.set_page_config(page_title="Uni-Assistant", page_icon="🎓")
 st.title("🎓 University Student Assistant")
 st.caption("I answer questions based on official university rules.")
 
-# --- CLASS INITIALIZATION (The "Magic" Part) ---
-# We use 'session_state' so Streamlit doesn't restart the bot every time you click a button.
+# --- CLASS INITIALIZATION ---
 if "bot" not in st.session_state:
-    st.session_state.bot = GroqModel(rules_file="rules.txt")
+    st.session_state.bot = GroqModel()
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("Settings")
-    if st.button("Clear Chat History"):
+
+    # Language selection — controls both STT and TTS
+    st.subheader("🌐 Language")
+    language_label = st.radio("Select Language", options=["Arabic", "English"], index=0)
+    language_code = "ar" if language_label == "Arabic" else "en"
+
+    # TTS toggle
+    st.subheader("🔊 Text-to-Speech")
+    tts_enabled = st.toggle("Enable Voice Responses", value=False)
+
+    st.divider()
+    if st.button("🗑️ Clear Chat History"):
         st.session_state.bot.clear_history()
         st.rerun()
 
 # --- DISPLAY CHAT HISTORY ---
-# We skip the first message (index 0) because that is your hidden System Prompt/Rules.
 for message in st.session_state.bot.conversation_history[1:]:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- USER INPUT ---
+# --- VOICE INPUT (STT) ---
+st.subheader("🎙️ Voice Input")
+audio_input = st.audio_input("Record your question")
+
+if audio_input:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_audio:
+        tmp_audio.write(audio_input.read())
+        tmp_audio_path = tmp_audio.name
+
+    with st.spinner("Transcribing your voice..."):
+        transcribed_text = speech_to_text(tmp_audio_path, language=language_code)
+    os.unlink(tmp_audio_path)
+
+    st.success(f"📝 Transcribed: *{transcribed_text}*")
+
+    with st.chat_message("user"):
+        st.markdown(transcribed_text)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Checking university rules..."):
+            response = st.session_state.bot.chat(transcribed_text)
+            st.markdown(response)
+
+            if tts_enabled:
+                with st.spinner("Generating voice response..."):
+                    audio_path = text_to_speech(response, language=language_code)
+                    st.audio(audio_path, autoplay=True)
+
+# --- TEXT INPUT ---
+st.subheader("⌨️ Text Input")
 if prompt := st.chat_input("How can I help you today?"):
-    # 1. Display user message immediately
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 2. Generate and display bot response using our Class
     with st.chat_message("assistant"):
         with st.spinner("Checking university rules..."):
             response = st.session_state.bot.chat(prompt)
             st.markdown(response)
+
+            if tts_enabled:
+                with st.spinner("Generating voice response..."):
+                    audio_path = text_to_speech(response, language=language_code)
+                    st.audio(audio_path, autoplay=True)
